@@ -8,13 +8,20 @@ bool publishingEnabled = true;
 bool debug = true;
 
 // 433 Mhz Transmitter Data Pin
-int txDataPin = D6;
+const int txDataPin = D6;
 
 // Photoresistor Read Pin
-int photoresistorPin = A1;
+const int photoresistorPin = A1;
 
 // Photoresistor "power" pin, used to guarantee a steady voltage to the photoresisotr for accuracy
-int powerPin = A5;
+const int powerPin = A5;
+
+// Number of wireless switches
+const int numSwitches = 5;
+
+// On/Off codes
+const int onCodes[5]  = { 349491, 349635, 349955, 351491, 357635 };
+const int offCodes[5] = { 349500, 349644, 349964, 351500, 357644 };
 
 // Photoresistor value average over last minute
 int lightLevel = 0UL;
@@ -32,11 +39,18 @@ unsigned long prevPublishTime = 0UL;
 
 // Create switch object
 RCSwitch mySwitch = RCSwitch();
-int pulseLength = 184; // mySwitch.getReceivedDelay()
+const int pulseLength = 184; // mySwitch.getReceivedDelay()
 
 // Functions for controlling a switch being on and off
+// command can either be a single swich, or a list of up to numSwitches switches seperated by commas
 int switchOn(String command);
 int switchOff(String command);
+
+// Switch implementation
+int doSwitch(String& command, const int* codeList);
+
+int argumentList[5];
+int tokenzieArguments(String& arguments);
 
 void setup() {
   // Pin Setup
@@ -54,7 +68,7 @@ void setup() {
   for (int i = 0; i < publishInterval; ++i) publishLightLevels[i] = lightLevel;
 
   // Serial Setup (for debug)
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   // RCSwitch library setup
   mySwitch.enableTransmit(txDataPin);
@@ -80,9 +94,6 @@ void loop() {
     // Calculate approximate average over the last 64 seconds
     lightLevel -= (lightLevel >> 7); // lightlevel/64
     lightLevel += (reading >> 7);
-
-    // DEBUG
-    // Serial.println("Real Reading: " + String(reading) + "\tAverage Reading: " + String(lightLevel));
   }
 
   // LightLevel publishing
@@ -91,7 +102,7 @@ void loop() {
     if (currTime-prevMinTime > 60000UL) {
       prevMinTime = currTime;
 
-      // Update index so it is circular
+      // Update index so it is circles around the array
       int publishLightLevelIndex = currTime % publishInterval;
 
       // Put lightLevel in array every minute
@@ -109,36 +120,58 @@ void loop() {
 
       // Publish lightLevel at regular intervals
       Spark.publish("lightLevel",String(publishLightLevelAvg));
-
-      // DEBUG
-      //Serial.println("Publishing: " + String(publishLightLevelAvg));
     }
   }
 }
 
-// switch_num on/off
-// 1:349491/349500
-// 2:349635/349644
-// 3:349955/349964
-// 4:351491/351500
-// 5:357635/357644
-
 int switchOn(String command) {
-  if (command == "1")
-    mySwitch.send(349491, 24);
-  else if (command == "2")
-    mySwitch.send(349635, 24);
-  else { return -1; }
-  return 1;
+  return doSwitch(command, onCodes);
 }
 
 int switchOff(String command) {
-  if (command == "1") {
-    mySwitch.send(349500, 24);
+  return doSwitch(command, offCodes);
+}
+
+// Implementation of switch command
+int doSwitch(String& command, const int* codeList) {
+  if(tokenzieArguments(command)) {
+    // Loop through argmueent list switching every switch that is not -1 or greater than numSwitches
+    for (int i = 0; i < numSwitches; ++i) {
+      if (argumentList[i] > 0 && argumentList[i] <= numSwitches) {
+        mySwitch.send(codeList[argumentList[i] - 1],24);
+        delay(100);
+        Serial.println(argumentList[i]);
+      }
+    }
+    return 1;
   }
-  else if (command == "2") {
-    mySwitch.send(349644, 24);
+  return 0;
+}
+
+int tokenzieArguments(String& arguments) {
+  if (arguments.length()) {
+    // Reset argumentList
+    for (int i = 0; i < numSwitches; ++i) argumentList[i] = -1;
+
+    // Tokenize list of arguments
+    if(arguments.indexOf(",") != -1) {
+      int numToks = 0;
+      char inputStr[64];
+      arguments.toCharArray(inputStr,64);
+      char *p;
+      p = strtok(inputStr,",");
+      while (p != NULL && numToks < (numSwitches - 1)) {
+        argumentList[numToks] = atoi(p);
+        p = strtok (NULL, ",");
+        numToks++;
+      }
+    }
+
+    // Single argument case
+    else {
+      argumentList[0] = arguments.toInt();
+    }
+    return 1;
   }
-  else { return -1; }
-  return 1;
+  return 0;
 }
