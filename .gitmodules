@@ -1,0 +1,3 @@
+[submodule "firmware/lib/RCSwitch"]
+	path = firmware/lib/RCSwitch
+	url = git@github.com:suda/RCSwitch.git
