@@ -1,5 +1,10 @@
 #include "application.h" // Defines things such as D6, A1, HIGH/LOW, and OUTPUT/INPUT. Needed for .cpp files.
 #include "RCSwitch.h"    // https://github.com/suda/RCSwitch
+#include "plotly_particle.h"
+
+#define NUM_TRACES 1
+char *streaming_tokens[NUM_TRACES] = {"l5natiwog5"};
+plotly graph = plotly("zpartal", "j6ejuqezsz", streaming_tokens, "ProjectLuminance", NUM_TRACES);
 
 // Publishing lightlevels to particle cloud
 bool publishingEnabled = true;
@@ -75,9 +80,21 @@ void setup() {
   mySwitch.setPulseLength(pulseLength);
 
   // Register web endpoints
-  Spark.function("on", switchOn);                     // Register 'POST: /{device}/on' function
-  Spark.function("off", switchOff);                   // Register 'POST: /{device}/off' function
-  Spark.variable("lightLevel", &lightLevel, INT);     // Register 'GET: /{device}/lightLevel' variable
+  Particle.function("on", switchOn);                     // Register 'POST: /{device}/on' function
+  Particle.function("off", switchOff);                   // Register 'POST: /{device}/off' function
+  Particle.variable("lightLevel", &lightLevel, INT);     // Register 'GET: /{device}/lightLevel' variable
+
+  while (!WiFi.ready()) {};
+  Serial.println("Wifi Ready...");
+
+  // Plotly
+  graph.world_readable = false;
+  graph.timezone = "US/Central";
+  graph.fileopt = "extend"; // Remove this if you want the graph to be overwritten on initialization
+  // graph.log_level = 0;
+
+  graph.init();
+  graph.openStream();
 }
 
 void loop() {
@@ -94,6 +111,8 @@ void loop() {
     // Calculate approximate average over the last 64 seconds
     lightLevel -= (lightLevel >> 7); // lightlevel/64
     lightLevel += (reading >> 7);
+
+    // Serial.println("Light Level: " + String(lightLevel));
   }
 
   // LightLevel publishing
@@ -119,7 +138,8 @@ void loop() {
       int publishLightLevelAvg = publishLightLevelTotal / publishInterval;
 
       // Publish lightLevel at regular intervals
-      Spark.publish("lightLevel",String(publishLightLevelAvg));
+      Particle.publish("lightLevel",String(publishLightLevelAvg));
+      graph.plot(millis(), lightLevel, streaming_tokens[0]);
     }
   }
 }
